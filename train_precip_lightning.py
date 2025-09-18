@@ -75,7 +75,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_folder",
         default=os.path.join(ROOT_DIR,
-                             "utils/data/images/train_test_2017-2022_input-length_5_img-ahead_20_rain-threshold_20_norm.h5"),
+                             "path/to/dataset"),
         type=str,
     )
     parser.add_argument("--learning_rate", default=0.0001, type=float)

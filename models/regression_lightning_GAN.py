@@ -6,8 +6,6 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from pytorch_msssim import ssim
 import argparse
 import numpy as np
-import torch.nn.functional as F
-from torchvision import transforms
 
 from utils import dataset_precip
 from models.discriminator import Discriminator
@@ -35,20 +33,11 @@ class UNet_base(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(hparams)
 
-        # 设置手动优化
+        # Set manual optimization
         self.automatic_optimization = False
 
-        # 训练步数计数器
+        # Training step counter
         self.current_step = 0
-
-def time_reversal_transform(x):
-    """Global function for time dimension reversal (picklable)"""
-    if np.random.rand() < 0.3:
-        x = torch.from_numpy(x)
-        x = torch.flip(x, dims=(0,))
-        x = x.numpy()
-        return x
-    return x
 
 
 class Precip_regression_base(UNet_base):
@@ -60,14 +49,14 @@ class Precip_regression_base(UNet_base):
         parser.add_argument("--num_output_images", type=int, default=20)
         parser.add_argument("--valid_size", type=float, default=0.1)
         parser.add_argument("--use_oversampled_dataset", type=bool, default=True)
-        parser.add_argument("--lambda_gan", type=float, default=1)  # 调整GAN损失权重
-        parser.add_argument("--d_train_freq", type=int, default=2)  # 判别器训练频率
+        parser.add_argument("--lambda_gan", type=float, default=1)  # Adjust GAN loss weight
+        parser.add_argument("--d_train_freq", type=int, default=2)  # Discriminator training frequency
         parser.add_argument("--g_train_freq", type=int, default=1)
-        parser.add_argument("--warmup_epochs", type=int, default=1)  # 增加预热轮数
-        parser.add_argument("--grad_clip_val", type=float, default=1.0)  # 梯度裁剪阈值
+        parser.add_argument("--warmup_epochs", type=int, default=1)  # Add warmup epochs
+        parser.add_argument("--grad_clip_val", type=float, default=1.0)  # Gradient clipping threshold
         parser.add_argument("--max_epochs", type=int, default=200)
-        parser.add_argument("--d_lr", type=float, default=1e-4)  # 判别器学习率
-        parser.add_argument("--g_lr", type=float, default=1e-3)  # 生成器学习率
+        parser.add_argument("--d_lr", type=float, default=1e-4)  # Discriminator learning rate
+        parser.add_argument("--g_lr", type=float, default=1e-3)  # Generator learning rate
         parser.add_argument("--use_gan", type=bool, default=True)
         parser.n_channels = parser.parse_args().num_input_images
         parser.n_classes = 20
@@ -75,66 +64,66 @@ class Precip_regression_base(UNet_base):
 
     def __init__(self, hparams):
         super().__init__(hparams=hparams)
-        # 初始化判别器
+        # Initialize discriminator
         self.discriminator = Discriminator(input_channels=25)
-        # 初始化数据集相关变量
+        # Initialize dataset related variables
         self.train_dataset = None
         self.valid_dataset = None
         self.train_sampler = None
         self.valid_sampler = None
 
-        # 预热计数器
+        # Warmup counter
         self.warmup_step = 0
 
-        # 判别器训练计数器
+        # Discriminator training counter
         self.d_step = 0
 
     def loss_func(self, y_pred, y_true, x_input=None):
-        # 像素级损失
+        # Pixel-level loss
         pixel_loss = nn.functional.mse_loss(y_pred, y_true, reduction='sum') / y_true.size(0)
         high_precip_mask = (y_true >= 0.15).float()
         weighted_pixel_loss = (pixel_loss * (1 + 2 * high_precip_mask)).mean()
-        # SSIM损失
+        # SSIM loss
         ssim_loss = (1 - ssim(y_pred, y_true, data_range=1.0)).mean()
 
-        # L1正则化
+        # L1 regularization
         l1_reg = sum(p.abs().mean() for p in self.parameters())
 
-        # 总损失
+        # Total loss
         total_loss = (
                 0.7 * weighted_pixel_loss +
                 0.3 * ssim_loss +
                 0.0001 * l1_reg
         )
 
-        # GAN损失
+        # GAN loss
         if x_input is not None and self.training and self.hparams.use_gan:
             fake_input = torch.cat([x_input, y_pred], dim=1)
             real_input = torch.cat([x_input, y_true], dim=1)
 
-            # 计算强降水区域掩码（基于真实标签）
+            # Calculate heavy precipitation region mask (based on ground truth)
             high_precip_mask = (y_true >= 0.15).float().unsqueeze(1)  # 扩展为[B,1,H,W]
 
-            # 判别器损失加权（强降水区域损失权重×2）
+            # Weighted discriminator loss (heavy precipitation region loss weight × 2)
             d_real = self.discriminator(real_input)
             d_fake = self.discriminator(fake_input.detach())
             d_loss_real = nn.BCELoss(reduction='none')(d_real, torch.ones_like(d_real)) * (1 + 2 * high_precip_mask)
             d_loss_fake = nn.BCELoss(reduction='none')(d_fake, torch.zeros_like(d_fake)) * (1 + 2 * high_precip_mask)
             d_loss = (d_loss_real + d_loss_fake).mean()
 
-            # 生成器损失加权（强降水区域损失权重×2）
+            # Weighted generator loss (heavy precipitation region loss weight × 2)
             g_loss = nn.BCELoss(reduction='none')(self.discriminator(fake_input), torch.ones_like(d_fake)) * (
                     1 + 2 * high_precip_mask)
             g_loss = g_loss.mean()
 
-            # 预热阶段
+            # Warmup phase
             if self.warmup_step < self.hparams.warmup_epochs:
                 warmup_factor = self.warmup_step / self.hparams.warmup_epochs
                 gan_weight = self.hparams.lambda_gan * warmup_factor
             else:
                 gan_weight = self.hparams.lambda_gan
 
-            # 添加GAN损失
+            # Add GAN loss
             total_loss += gan_weight * g_loss
 
             return total_loss, d_loss
@@ -142,13 +131,13 @@ class Precip_regression_base(UNet_base):
         return total_loss, None
 
     def training_step(self, batch, batch_idx):
-        # 获取优化器
+        # Get optimizers
         g_opt, d_opt = self.optimizers()
 
         x, y = batch
         self.current_step += 1
 
-        # 训练判别器
+        # Train discriminator
         if self.current_step % self.hparams.d_train_freq == 0 and self.hparams.use_gan:
             d_opt.zero_grad()
             with torch.set_grad_enabled(True):
@@ -167,7 +156,7 @@ class Precip_regression_base(UNet_base):
                 torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), self.hparams.grad_clip_val)
                 d_opt.step()
 
-        # 训练生成器
+        # Train generator
         if self.current_step % self.hparams.g_train_freq == 0:
             y_pred = self(x)
             loss, _ = self.loss_func(y_pred, y, x)
@@ -176,14 +165,14 @@ class Precip_regression_base(UNet_base):
             torch.nn.utils.clip_grad_norm_(self.parameters(), self.hparams.grad_clip_val)
             g_opt.step()
 
-        # 更新预热步数
+        # Update warmup steps
         if batch_idx == 0:
             self.warmup_step += 1
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_pred = self(x)
-        # 在验证阶段只计算基本损失，不计算GAN损失
+        # In validation phase, only calculate basic loss, not GAN loss
         pixel_loss = nn.functional.mse_loss(y_pred, y, reduction="sum") / y.size(0)
 
         self.log("val_loss", pixel_loss, prog_bar=True)
@@ -207,7 +196,7 @@ class Precip_regression_base(UNet_base):
             "interval": "epoch"
         }
 
-        # 判别器优化器
+        # Discriminator optimizer
         d_opt = optim.AdamW(
             self.discriminator.parameters(),
             lr=self.hparams.d_lr,
@@ -231,9 +220,6 @@ class Precip_regression_base(UNet_base):
     def prepare_data(self):
         train_transform = None
 
-        # train_transform = transforms.Compose([
-        #     transforms.Lambda(time_reversal_transform)  # 时间维度倒序
-        # ])
         valid_transform = None
         test_transform = None
         precip_dataset = (

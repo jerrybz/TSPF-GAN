@@ -29,11 +29,10 @@ class SpatialAttention(nn.Module):
 
     def forward(self, x):
         res = self.sa(x)
-        # # 使用插值调整大小
-        # res = F.interpolate(res, size=x.shape[2:], mode='bilinear', align_corners=False)
+        # Use interpolation to adjust size
         res = self.dropout(self.sigmoid(res.expand_as(x)))
-        high_precip_mask = torch.sigmoid((x > 0.15).float())  # 0.15为降水阈值
-        return res * high_precip_mask  # 仅保留强降水区域的注意力
+        high_precip_mask = torch.sigmoid((x > 0.15).float())  # 0.15 is precipitation threshold
+        return res * high_precip_mask  # Only retain attention in heavy precipitation regions
 
 
 class TemporalAttention(nn.Module):
@@ -93,33 +92,27 @@ class TSPFM(nn.Module):
             nn.Dropout(0.2),
         )
 
-        # self.conv = nn.Conv2d(input_channels, input_channels, 3, 1, 1,groups=input_channels)
         self.sigmoid = nn.Sigmoid()
-        # self.drop = nn.Dropout(0.1)
 
     def forward(self, x):
         out_c = self.temporal_att(x)
         out_s = self.spatial_att(x)
         out_p = self.pixel_att(x)
         out_f = self.fusion(torch.cat([out_c,out_s,out_p], dim=1))
-        # out_f = self.fusion(torch.cat([out_c,out_p], dim=1))
 
-        # weight = self.sigmoid(out)
-        # out = x * weight
-        # out = self.conv(out_f)
         return self.sigmoid(out_f) * x
         
     def get_individual_attentions(self, x):
-        """获取每个注意力模块的单独输出
+        """Get individual outputs from each attention module
         
         Args:
-            x: 输入张量，形状为[B,C,H,W]，其中C表示时间步
+            x: Input tensor with shape [B,C,H,W], where C represents time steps
         
         Returns:
-            Dict包含三个注意力模块的输出：
-            - temporal_attention: 时间注意力权重
-            - spatial_attention: 空间注意力权重
-            - pixel_attention: 像素注意力权重
+            Dict containing outputs from three attention modules:
+            - temporal_attention: Temporal attention weights
+            - spatial_attention: Spatial attention weights
+            - pixel_attention: Pixel attention weights
         """
         temporal_att = self.temporal_att(x)
         spatial_att = self.spatial_att(x)
@@ -132,42 +125,42 @@ class TSPFM(nn.Module):
         }
         
     def visualize_individual_attentions(self, x, device='cpu', debug=False):
-        """可视化每个注意力模块的热图
+        """Visualize heatmaps for each attention module
         
         Args:
-            x: 输入张量，形状为[B,C,H,W]，其中C表示时间步
-            device: 运行设备
-            debug: 是否输出调试信息
+            x: Input tensor with shape [B,C,H,W], where C represents time steps
+            device: Running device
+            debug: Whether to output debug information
         
         Returns:
-            Dict包含三个注意力模块的可视化热图
+            Dict containing visualization heatmaps for three attention modules
         """
         att_outputs = self.get_individual_attentions(x)
         visualizations = {}
         
-        # 对每个时间步计算平均注意力权重
+        # Calculate average attention weights for each time step
         for att_type, att_map in att_outputs.items():
-            # [B,C,H,W] -> [B,H,W]，在时间维度上取平均
+            # [B,C,H,W] -> [B,H,W], average over time dimension
             avg_att_map = torch.mean(att_map, dim=1)
             
-            # 如果是调试模式，打印注意力权重的统计信息
+            # If in debug mode, print statistical information of attention weights
             if debug and att_type == 'temporal_attention':
-                print(f"=== 时间注意力调试信息 ===")
-                print(f"原始注意力权重范围: [{torch.min(att_map):.6f}, {torch.max(att_map):.6f}]")
-                print(f"原始注意力权重均值: {torch.mean(att_map):.6f}")
-                print(f"平均后注意力权重范围: [{torch.min(avg_att_map):.6f}, {torch.max(avg_att_map):.6f}]")
-                print(f"平均后注意力权重均值: {torch.mean(avg_att_map):.6f}")
+                print(f"=== Temporal Attention Debug Info ===")
+                print(f"Original attention weights range: [{torch.min(att_map):.6f}, {torch.max(att_map):.6f}]")
+                print(f"Original attention weights mean: {torch.mean(att_map):.6f}")
+                print(f"After averaging attention weights range: [{torch.min(avg_att_map):.6f}, {torch.max(avg_att_map):.6f}]")
+                print(f"After averaging attention weights mean: {torch.mean(avg_att_map):.6f}")
                 
-                # 计算强降水掩码的统计信息（模拟TemporalAttention中的计算）
+                # Calculate statistical information of heavy precipitation mask (simulating calculation in TemporalAttention)
                 high_precip_mask = torch.sigmoid((x > 0.15).float()).mean(dim=(2,3), keepdim=True)
-                print(f"强降水掩码均值: {torch.mean(high_precip_mask):.6f}")
+                print(f"Heavy precipitation mask mean: {torch.mean(high_precip_mask):.6f}")
                 
-                # 检查有多少注意力值大于0.1（任意阈值）
+                # Check how many attention values are greater than 0.1 (arbitrary threshold)
                 non_zero_count = torch.sum(avg_att_map > 0.1).item()
                 total_count = avg_att_map.numel()
-                print(f"注意力值>0.1的比例: {non_zero_count/total_count*100:.2f}%")
+                print(f"Percentage of attention values >0.1: {non_zero_count/total_count*100:.2f}%")
         
-            # 将注意力权重缩放到0-1范围
+            # Scale attention weights to 0-1 range
             min_val = torch.min(avg_att_map)
             max_val = torch.max(avg_att_map)
             normalized_att = (avg_att_map - min_val) / (max_val - min_val + 1e-8)

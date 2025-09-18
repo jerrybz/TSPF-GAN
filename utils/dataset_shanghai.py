@@ -10,7 +10,7 @@ from matplotlib import colors, pyplot as plt
 
 from root import ROOT_DIR
 
-PIXEL_SCALE = 90.0
+PIXEL_SCALE = 70.0
 
 
 class Shanghai(Dataset):
@@ -76,7 +76,7 @@ COLOR_MAP = np.array([
     [255, 255, 255, 255]
 ]) / 255
 
-BOUNDS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, PIXEL_SCALE]
+BOUNDS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, PIXEL_SCALE]
 THRESHOLDS = [20, 30, 35, 40]
 
 HMF_COLORS = np.array([

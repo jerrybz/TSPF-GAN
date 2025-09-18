@@ -142,10 +142,10 @@ if __name__ == "__main__":
     denormalize=True
     # Models that are compared should be in this folder (the ones with the lowest validation error)
     model_name = "TSPF-GAN"
-    results_folder = os.path.join(ROOT_DIR, "resources/sh/")
+    results_folder = os.path.join(ROOT_DIR, "path/to/results")
     model_file = os.path.join(ROOT_DIR,
-                              "checkpoints/comp/RadarCast_high.ckpt")
+                              "path/to/checkpoints/")
     data_file = (
-        os.path.join(ROOT_DIR, "utils/data/shanghai.h5")
+        os.path.join(ROOT_DIR, "path/to/dataset"),
     )
     test_losses = get_model_losses(model_file, model_name, data_file, results_folder)

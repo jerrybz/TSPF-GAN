@@ -44,12 +44,12 @@ def get_metrics(model, model_name, test_dl, denormalize=True, threshold=0.5, k=1
         csi = 0.0
         uncertainty = 0.0
         
-        # 初始化PSNR和SSIM相关变量
+        # Initialize PSNR and SSIM related variables
         total_psnr = 0.0
         total_ssim = 0.0
         batch_count = 0
         
-        # 初始化SSIM计算器
+        # Initialize SSIM calculator
         for x, mask, y_true, _ in tqdm(test_dl, leave=False):
 
             x = x.to(device)
@@ -71,8 +71,8 @@ def get_metrics(model, model_name, test_dl, denormalize=True, threshold=0.5, k=1
             # calculate loss on denormalized data
             loss_denorm += loss_func(y_pred_adj, y_true_adj, reduction="sum")
 
-            # 计算PSNR（在去归一化之前，使用归一化的数据）
-            # 将数据范围调整到[0,1]用于PSNR计算
+            # Calculate PSNR (before denormalization, using normalized data)
+            # Adjust data range to [0,1] for PSNR calculation
             y_pred_norm = y_pred[:12]
             y_true_norm = y_true[:12]
             heavy_mask = (y_pred_adj[:12]>threshold).float().unsqueeze(0)
@@ -88,7 +88,7 @@ def get_metrics(model, model_name, test_dl, denormalize=True, threshold=0.5, k=1
             if len(y_pred_norm.shape) == 3:
                 y_pred_norm = y_pred_norm.unsqueeze(0)  # [20, 64, 64] -> [1, 20, 64, 64]
                 y_true_norm = y_true_norm.unsqueeze(0)  # [20, 64, 64] -> [1, 20, 64, 64]
-            # 计算PSNR
+            # Calculate PSNR
             psnr_value = wpsnr([y_pred_norm, y_true_norm],weight_map=heavy_mask, max_val=1.0)
             total_psnr += psnr_value
 
@@ -135,14 +135,12 @@ def calculate_mcc(total_tp, total_tn, total_fp, total_fn):
 
 
 def get_model_losses(model_file, model_name, data_file, denormalize, random_seeds=[42, 123, 456]):
-    # 确保至少使用3个随机种子进行统计显著性评估
+    # Ensure at least 3 random seeds are used for statistical significance evaluation
     if len(random_seeds) < 3:
-        print(f"警告: 至少需要3个随机种子进行统计显著性评估，当前只有{len(random_seeds)}个")
-        # 如果种子数量不足，添加更多种子
+        print(f"Warning: At least 3 random seeds are required for statistical significance evaluation, currently only {len(random_seeds)} available")
+        # If the number of seeds is insufficient, add more seeds
         while len(random_seeds) < 3:
             random_seeds.append(random_seeds[-1] + 1)
-    
-    print(f"使用{len(random_seeds)}个随机种子进行统计显著性评估: {random_seeds}")
     
     # Initialize metrics storage for all seeds
     all_seed_losses = {seed: {} for seed in random_seeds}
@@ -212,13 +210,13 @@ def get_model_losses(model_file, model_name, data_file, denormalize, random_seed
             mean_metrics = np.mean(metrics_array, axis=0)
             std_metrics = np.std(metrics_array, axis=0)
             
-            # 计算变异系数 (CV = std/mean) 来评估结果的稳定性
+            # Calculate coefficient of variation (CV = std/mean) to evaluate result stability
             cv_metrics = np.divide(std_metrics, mean_metrics, out=np.zeros_like(std_metrics), where=mean_metrics!=0)
             
-            # 打印统计信息
+            # Print statistical information
             metric_names = ['MSE', 'F1', 'CSI', 'HSS', 'MCC', 'PSNR']
-            print(f"\n{model_name_val} (threshold={threshold_val}) 统计结果:")
-            print(f"{'指标':<8} {'均值':<12} {'标准差':<12} {'变异系数':<12}")
+            print(f"\n{model_name_val} (threshold={threshold_val}) Statistical Results:")
+            print(f"{'Metric':<8} {'Mean':<12} {'Std Dev':<12} {'CV':<12}")
             print("-" * 50)
             for i, (mean, std, cv) in enumerate(zip(mean_metrics, std_metrics, cv_metrics)):
                 if i < len(metric_names):
@@ -244,7 +242,7 @@ def losses_to_csv(losses, path):
         csv = "threshold, name, mse, f1, csi, hss, mcc, psnr\n"
 
     for loss in losses:
-        # 将“均值 ± 标准差”中的标准差统一为科学计数法显示
+        # Uniformly display standard deviation in scientific notation in "mean ± std" format
         def fmt(item):
             if isinstance(item, str) and '±' in item:
                 try:
@@ -268,17 +266,16 @@ if __name__ == "__main__":
     denormalize=True
     # Models that are compared should be in this folder (the ones with the lowest validation error) ,"GA-SmaAt-GNet","SmaAt-UNet"
     data_file = (
-        os.path.join(ROOT_DIR,"utils/data/images/train_test_2017-2022_input-length_5_img-ahead_20_rain-threshold_20_norm.h5")
+        os.path.join(ROOT_DIR,"path/to/dataset"),
     )
-    results_folder = os.path.join(ROOT_DIR, "results")
-    model_file = os.path.join(ROOT_DIR, "checkpoints/comp/RadarCast_high.ckpt")
+    results_folder = os.path.join(ROOT_DIR, "path/to/results")
+    model_file = os.path.join(ROOT_DIR, "path/to/model.ckpt")
     model_name = "TSPF-GAN"
 
-    # 使用5个随机种子进行统计显著性评估
+    # Use 5 random seeds for statistical significance evaluation
     test_losses = get_model_losses(model_file, model_name, data_file, denormalize)
 
-    # 保存CSV结果
-    print(f"\n保存结果到CSV文件...")
+    # Save CSV results
     print(losses_to_csv(test_losses['binary_50'], (os.path.join(results_folder, f"{model_name}_res_50.csv"))))
     print(losses_to_csv(test_losses['binary_1000'], (os.path.join(results_folder, f"{model_name}_res_1000.csv"))))
     print(losses_to_csv(test_losses['binary_2000'], (os.path.join(results_folder, f"{model_name}_res_2000.csv"))))
